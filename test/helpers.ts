@@ -28,6 +28,7 @@ export const bytesOf = (value: unknown): Uint8Array => new TextEncoder().encode(
 export async function resetDb(): Promise<void> {
   await testEnv.DB.batch([
     testEnv.DB.prepare("DELETE FROM attempts"),
+    testEnv.DB.prepare("DELETE FROM review_batches"),
     testEnv.DB.prepare("DELETE FROM usage"),
     testEnv.DB.prepare("DELETE FROM devices"),
     testEnv.DB.prepare("DELETE FROM challenges"),

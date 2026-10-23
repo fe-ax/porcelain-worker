@@ -1,6 +1,7 @@
 import { handleAdmin } from "./admin";
 import { handleChallenge, handleEnroll, handleStatus } from "./enroll";
 import { handleRequest } from "./pipeline";
+import { handleReview, handleReviewCancel, handleReviewStatus } from "./review";
 import { HttpError, type Env } from "./types";
 
 // Router. Endpoints and flow: ../docs/WIRE.md. Order for /v1/request: headers -> device status ->
@@ -15,6 +16,9 @@ export const handlers = {
   // The full pipeline lives in pipeline.ts (headers, device, assertion, status, limits, schema, Claude, output check).
   request: (request: Request, env: Env): Promise<Response> => handleRequest(request, env),
   status: (request: Request, env: Env): Promise<Response> => handleStatus(request, env),
+  review: (request: Request, env: Env): Promise<Response> => handleReview(request, env),
+  reviewStatus: (request: Request, env: Env): Promise<Response> => handleReviewStatus(request, env),
+  reviewCancel: (request: Request, env: Env): Promise<Response> => handleReviewCancel(request, env),
 };
 
 export default {
@@ -29,6 +33,9 @@ export default {
         "/v1/enroll": handlers.enroll,
         "/v1/request": handlers.request,
         "/v1/status": handlers.status,
+        "/v1/review": handlers.review,
+        "/v1/review/status": handlers.reviewStatus,
+        "/v1/review/cancel": handlers.reviewCancel,
       }[url.pathname];
       if (!route) return json(404, { error: "not_found" });
       if (request.method !== "POST") return json(405, { error: "method_not_allowed" });

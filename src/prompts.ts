@@ -1,4 +1,4 @@
-import type { ClaudeCall, RequestContext, ValidatedRequest } from "./types";
+import type { ClaudeCall, RequestContext, ReviewBody, ValidatedRequest } from "./types";
 
 // Ports of AIPhotoPrompt, AILookupPrompt, AIPicturePrompt, AINamePrompt, AIPhotoSchema and ProductContext
 // (Porcelain/AI/AIClient.swift, ProductContext.swift). The prompt texts below were extracted from the Swift
@@ -233,4 +233,37 @@ export function buildClaudeCall(req: ValidatedRequest): ClaudeCall {
         schema: nutritionSchema(),
       };
   }
+}
+
+// MARK: - Day review
+
+const REVIEW_SYSTEM =
+  "You review what one person has eaten so far today in their personal food tracker. You get a list of what they ate with the amounts and nutrition values (besides energy and macros, fibre, sugars, saturated fat and salt where known; a detail that is not listed is unknown, not zero), and their targets for the day. Say how the day is going: what is well covered, what is too much or missing (energy, protein, fat, carbs, and what the foods imply such as vegetables or variety), and one or two concrete ideas for the rest of the day. Use web search only when you need to check a fact about a specific food. Be direct and friendly, plain text, at most 120 words, no headings and no bullet symbols.";
+
+export const reviewSystemPrompt = (dutch: boolean): string =>
+  `${REVIEW_SYSTEM}\n${dutch ? "Write the whole answer in Dutch (Nederlands)." : "Write the whole answer in English."}`;
+
+/** 12 or 12.5: at most one decimal, no trailing ".0". */
+const num = (value: number): string => String(Math.round(value * 10) / 10);
+
+/** The deterministic user text of a day review (the app's old format). */
+export function reviewUserText(body: ReviewBody): string {
+  const t = body.targets;
+  const e = body.eaten;
+  const active = t.activeKcal > 0 ? ` (including ${num(t.activeKcal)} kcal of active energy)` : "";
+  const lines = [
+    `Now: ${body.time}`,
+    `Target: ${num(t.kcal)} kcal${active}, protein ${num(t.protein)} g, fat ${num(t.fat)} g, carbs ${num(t.carbs)} g`,
+    `Eaten so far: ${num(e.kcal)} kcal, protein ${num(e.protein)} g, fat ${num(e.fat)} g, carbs ${num(e.carbs)} g`,
+    "Entries, in order:",
+  ];
+  for (const entry of body.entries) {
+    let line = `- ${entry.time} ${entry.name}, ${num(entry.grams)} g: ${num(entry.kcal)} kcal, protein ${num(entry.protein)} g, fat ${num(entry.fat)} g, carbs ${num(entry.carbs)} g`;
+    if (entry.fibre !== undefined) line += `, fibre ${num(entry.fibre)} g`;
+    if (entry.sugars !== undefined) line += `, sugars ${num(entry.sugars)} g`;
+    if (entry.saturatedFat !== undefined) line += `, saturated fat ${num(entry.saturatedFat)} g`;
+    if (entry.salt !== undefined) line += `, salt ${num(entry.salt)} g`;
+    lines.push(line);
+  }
+  return lines.join("\n");
 }

@@ -49,6 +49,32 @@ function firstBody(call: ClaudeCall): Record<string, unknown> {
   return body;
 }
 
+/** The web search tool definition shared by every call (max_uses is clamped by the caller). */
+export function webSearchTool(maxUses: number): Record<string, unknown> {
+  return {
+    type: "web_search_20250305",
+    name: "web_search",
+    max_uses: maxUses,
+    user_location: { type: "approximate", country: "NL" },
+  };
+}
+
+/** A request to the Anthropic API with the Worker's key and version header (no beta header). */
+export function anthropicRequest(env: Env, method: "GET" | "POST", url: string, body?: unknown): Request {
+  const headers: Record<string, string> = {
+    "x-api-key": env.ANTHROPIC_API_KEY,
+    "anthropic-version": ANTHROPIC_VERSION,
+    accept: method === "GET" && url.endsWith("/results") ? "application/x-jsonl, application/json" : "application/json",
+  };
+  if (body !== undefined) headers["content-type"] = "application/json";
+  return new Request(url, {
+    method,
+    headers,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+}
+
 function messagesRequest(env: Env, body: Record<string, unknown>): Request {
   return new Request(MESSAGES_URL, {
     method: "POST",

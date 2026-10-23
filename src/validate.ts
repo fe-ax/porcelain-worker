@@ -10,6 +10,8 @@ import {
   type NutritionFieldKey,
   type RequestKind,
   type RequestOptions,
+  type ReviewBody,
+  type ReviewEntry,
   type ValidatedRequest,
 } from "./types";
 
@@ -260,4 +262,77 @@ export function validateEnrollBody(raw: Uint8Array): EnrollBody {
 export function validateEmptyBody(raw: Uint8Array): void {
   const body = parseObject(raw);
   closed(body, []);
+}
+
+// MARK: - /v1/review
+
+const REVIEW_TIME = /^[\p{L}0-9 :]+$/u;
+const ENTRY_TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+const OPTIONAL_NUTRIENTS = ["fibre", "sugars", "saturatedFat", "salt"] as const;
+
+function reviewNumber(value: unknown, field: string, max = 100_000): number {
+  if (typeof value !== "number") throw invalid("type", field);
+  if (!Number.isFinite(value) || value < 0 || value > max) throw invalid("range", field);
+  return value;
+}
+
+function numberGroup<K extends string>(value: unknown, field: string, keys: readonly K[]): Record<K, number> {
+  if (!isObject(value)) throw invalid("type", field);
+  closed(value, keys, `${field}.`);
+  const out = {} as Record<K, number>;
+  for (const key of keys) {
+    if (value[key] === undefined) throw invalid("schema", `${field}.${key}`);
+    out[key] = reviewNumber(value[key], `${field}.${key}`);
+  }
+  return out;
+}
+
+/** Strict validation of the /v1/review body: closed schema, 64 KB, 1...60 entries, numbers finite and in range. */
+export function validateReviewBody(raw: Uint8Array): ReviewBody {
+  if (raw.byteLength > LIMITS.maxReviewBodyBytes) throw invalid("too_large");
+  const body = parseObject(raw);
+  closed(body, ["dutch", "time", "targets", "eaten", "entries"]);
+  if (typeof body["dutch"] !== "boolean") throw invalid("type", "dutch");
+  if (typeof body["time"] !== "string") throw invalid("type", "time");
+  const time = body["time"];
+  if (time.length < 1 || time.length > LIMITS.maxReviewTimeChars || !REVIEW_TIME.test(time) || time.trim() === "") {
+    throw invalid("time", "time");
+  }
+  const targets = numberGroup(body["targets"], "targets", ["kcal", "activeKcal", "protein", "fat", "carbs"] as const);
+  const eaten = numberGroup(body["eaten"], "eaten", ["kcal", "protein", "fat", "carbs"] as const);
+  const list = body["entries"];
+  if (!Array.isArray(list)) throw invalid("type", "entries");
+  if (list.length < 1 || list.length > LIMITS.maxReviewEntries) throw invalid("entries", "entries");
+  const entries: ReviewEntry[] = list.map((item, index) => {
+    const at = `entries.${index}`;
+    if (!isObject(item)) throw invalid("type", at);
+    closed(item, ["time", "name", "grams", "kcal", "protein", "fat", "carbs", ...OPTIONAL_NUTRIENTS], `${at}.`);
+    if (typeof item["time"] !== "string") throw invalid("type", `${at}.time`);
+    if (!ENTRY_TIME.test(item["time"])) throw invalid("time", `${at}.time`);
+    const entry: ReviewEntry = {
+      time: item["time"],
+      name: plainText(item["name"], `${at}.name`, "name", 1, LIMITS.maxNameChars),
+      grams: reviewNumber(item["grams"], `${at}.grams`, 20_000),
+      kcal: reviewNumber(item["kcal"], `${at}.kcal`),
+      protein: reviewNumber(item["protein"], `${at}.protein`),
+      fat: reviewNumber(item["fat"], `${at}.fat`),
+      carbs: reviewNumber(item["carbs"], `${at}.carbs`),
+    };
+    for (const key of OPTIONAL_NUTRIENTS) {
+      if (item[key] !== undefined) entry[key] = reviewNumber(item[key], `${at}.${key}`);
+    }
+    return entry;
+  });
+  return { dutch: body["dutch"], time, targets, eaten, entries };
+}
+
+const REVIEW_ID = /^[A-Za-z0-9_-]{22}$/;
+
+/** `{"id": "<22 base64url chars>"}` (review status and cancel). */
+export function validateReviewIdBody(raw: Uint8Array): string {
+  const body = parseObject(raw);
+  closed(body, ["id"]);
+  if (typeof body["id"] !== "string") throw invalid("type", "id");
+  if (!REVIEW_ID.test(body["id"])) throw invalid("id", "id");
+  return body["id"];
 }

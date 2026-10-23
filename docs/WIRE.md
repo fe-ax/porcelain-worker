@@ -14,6 +14,9 @@ secret); the app never sends a prompt, a model id or a token.
 | `POST /v1/enroll` | register a device with its App Attest attestation; the device becomes `pending` | attestation |
 | `POST /v1/request` | one AI request (label, lookup, picture, name) | assertion + status `approved` |
 | `POST /v1/status` | is this device pending / approved / denied (no Claude call, no daily-cap use) | assertion |
+| `POST /v1/review` | start a day review (fourth request family, section 9) | assertion + status `approved` |
+| `POST /v1/review/status` | poll a review; the Worker advances the Anthropic batch | assertion + status `approved` |
+| `POST /v1/review/cancel` | cancel a waiting review | assertion + status `approved` |
 | `/admin`, `/admin/api/*` | dashboard (see `admin.ts`) | Cloudflare Access JWT, not part of the app contract |
 
 ### 1.1 `POST /v1/challenge`
@@ -271,7 +274,7 @@ CREATE TABLE attempts (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   at        INTEGER NOT NULL,
   key_id    TEXT,                           -- null when the request had no usable key id
-  endpoint  TEXT NOT NULL,                  -- 'challenge' | 'enroll' | 'request' | 'status'
+  endpoint  TEXT NOT NULL,                  -- 'challenge' | 'enroll' | 'request' | 'status' | 'review' | 'review_status' | 'review_cancel'
   kind      TEXT,                           -- label | lookup | picture | name
   outcome   TEXT NOT NULL,                  -- 'ok' | the error code of section 6
   reason    TEXT,                           -- the `reason` slug, or null
@@ -301,3 +304,114 @@ Worker answers 503 otherwise). `POST /admin/login` with `{"token"}` sets the `__
 HttpOnly, Secure, SameSite=Strict); 5 failed logins per hour per hashed IP, then 429 (`admin_login_failures`, migration 0002).
 `POST /admin/logout` clears it. State-changing POSTs need `x-requested-with: porcelain-admin`. Rotating `ADMIN_TOKEN` ends all sessions.
 If `ADMIN_ACCESS_AUD` is set to a real Cloudflare Access audience, the Access JWT (`Cf-Access-Jwt-Assertion`) is required instead.
+
+## 9. Day review
+
+A fourth fixed request family. The app sends structured data; the Worker owns the system prompt, the user text, the model
+(`claude-sonnet-5-5`), `max_tokens` 16000, `output_config {effort: "medium"}`, the `web_search_20250305` tool (max_uses 25,
+user_location NL) and the Message Batches round trips. All three endpoints are signed exactly like `/v1/status` (section 2: same
+headers, assertion, nonce, counter; the client-data hash uses the path, e.g. `/v1/review/status`). Order: headers, device known,
+assertion, counter and nonce, device `approved` (403 `pending` / `denied` otherwise), then limits and schema. Anthropic is
+contacted only after every check passed. Attempts are logged as `review`, `review_status`, `review_cancel`. Migration
+`migrations/0004_review_batches.sql` (table `review_batches`).
+
+### 9.1 `POST /v1/review`
+
+Body at most 64 KB (400 `invalid`, `too_large`); closed schema, unknown fields rejected (`unknown_field`), strict types (`type`):
+
+```json
+{
+  "dutch": false,
+  "time": "Thursday 14:05",
+  "targets": { "kcal": 2000, "activeKcal": 350.5, "protein": 150, "fat": 70, "carbs": 200 },
+  "eaten": { "kcal": 812, "protein": 60, "fat": 25.3, "carbs": 90 },
+  "entries": [
+    { "time": "08:10", "name": "Skyr naturel", "grams": 250, "kcal": 157.5, "protein": 27.5, "fat": 0.5, "carbs": 10, "sugars": 10, "salt": 0.25 },
+    { "time": "12:30", "name": "Brood", "grams": 80, "kcal": 200, "protein": 7, "fat": 2, "carbs": 38, "fibre": 3.5, "sugars": 2, "saturatedFat": 0.5, "salt": 1 }
+  ]
+}
+```
+
+- `time`: letters, digits, spaces and colons only, 1...40 chars (`time`). Entry `time`: `HH:mm` (`time`).
+- `name`: 1...120 chars after trimming, no control or line/paragraph separator characters (`name`; same rule as a lookup name).
+- Numbers: JSON numbers, finite, 0...100000 (`grams` 0...20000), otherwise `range`; a string or null is `type`. `fibre`, `sugars`,
+  `saturatedFat`, `salt` are optional (absent = unknown; null is rejected). All other fields are required (`schema` when missing).
+- 1...60 entries (`entries`).
+
+The Worker builds the user text deterministically (numbers rounded to one decimal, no trailing `.0`; the "including" part only
+when `activeKcal` > 0; optional nutrients only when present). For the body above:
+
+```
+Now: Thursday 14:05
+Target: 2000 kcal (including 350.5 kcal of active energy), protein 150 g, fat 70 g, carbs 200 g
+Eaten so far: 812 kcal, protein 60 g, fat 25.3 g, carbs 90 g
+Entries, in order:
+- 08:10 Skyr naturel, 250 g: 157.5 kcal, protein 27.5 g, fat 0.5 g, carbs 10 g, sugars 10 g, salt 0.3 g
+- 12:30 Brood, 80 g: 200 kcal, protein 7 g, fat 2 g, carbs 38 g, fibre 3.5 g, sugars 2 g, saturated fat 0.5 g, salt 1 g
+```
+
+The system prompt is a constant in `prompts.ts` (`reviewSystemPrompt`) plus one language line: "Write the whole answer in Dutch
+(Nederlands)." when `dutch`, else "Write the whole answer in English.".
+
+Response 200 (a batch `custom_id: "day-review"` was created at Anthropic; `id` is an opaque 128-bit base64url handle, 22 chars):
+
+```json
+{ "id": "kP3v0m1Qx7yT2eWn9cZ8aA", "status": "waiting" }
+```
+
+Limits: at most one waiting review per device (a new one marks the previous waiting row `canceled` and cancels its batch at
+Anthropic, best effort); 10 per minute (counted from `review` attempts, like `/v1/request`); 40 reviews per device per UTC day
+(`LIMITS.reviewsPerDay`, counted from `review_batches.created_at`): 429 `limit` with `scope` `minute` / `day` and `retryAfter`.
+Anthropic unreachable or non-2xx on creation: 502 `upstream`.
+
+### 9.2 `POST /v1/review/status`
+
+Body `{"id": "<id>"}` (closed; a malformed id is 400 `invalid`, `reason: "id"`). The row must belong to the signed device,
+otherwise 404 `{"error":"not_found"}` (same for an unknown id). Responses (always 200):
+
+```json
+{ "status": "waiting" }
+{ "status": "done", "text": "Goed bezig vandaag. Je zit op 812 van 2000 kcal ..." }
+{ "status": "failed", "error": "upstream" }
+```
+
+`failed.error` is one of `upstream` (batch request errored), `expired`, `canceled` (Anthropic canceled it), `refused`
+(`stop_reason: refusal`), `incomplete` (`max_tokens`, or `pause_turn` after 3 resumes), `unreadable` (no usable result line, no
+non-empty text block). A waiting row asks Anthropic for the batch: `in_progress`/`canceling` answers `waiting`; `ended` fetches the
+results. A `pause_turn` turn (while resumes < 3) is continued by creating a NEW batch whose params get
+`{"role":"assistant","content":<paused content>}` appended; the row keeps its id, answers `waiting`. Otherwise the text is the LAST
+text block, trimmed. `done` and `failed` rows (and `canceled`) answer from D1 without calling Anthropic; they are purged
+opportunistically after 7 days (on `/v1/review`). If Anthropic cannot be reached while polling, the answer is 502 `upstream` and the
+row stays `waiting` (poll again). Anthropic's error bodies are never relayed.
+
+### 9.3 `POST /v1/review/cancel`
+
+Body `{"id": "<id>"}`, own row only (404 `not_found` otherwise). A waiting review is marked canceled and its batch canceled at
+Anthropic (best effort):
+
+```json
+{ "status": "canceled" }
+```
+
+Idempotent: a terminal row answers its current status (`done`, `failed`, `canceled`) and nothing is called.
+
+### 9.4 Error codes added
+
+| HTTP | `error` | `reason` / notes |
+|---|---|---|
+| 400 | `invalid` | adds `time`, `entries`, `range`, `id` to the slugs of section 6; `type`, `name`, `schema`, `unknown_field`, `too_large` as before |
+| 404 | `not_found` | review id unknown or owned by another device |
+| 429 | `limit` | `scope` `minute` or `day` |
+| 502 | `upstream` | Anthropic unreachable or non-2xx (`status` = its HTTP status) |
+
+D1:
+
+```sql
+CREATE TABLE review_batches (
+  id TEXT PRIMARY KEY, key_id TEXT NOT NULL, batch_id TEXT NOT NULL, params_json TEXT NOT NULL,
+  resumes INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting','done','failed','canceled')),
+  result_text TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX review_batches_key ON review_batches (key_id);
+```
