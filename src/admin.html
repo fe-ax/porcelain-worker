@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Porcelain devices</title>
+<style nonce="{{nonce}}">
+  :root {
+    --paper: #F7F3E8; --card: #FFFDF8; --ink: #111111; --muted: #6B665C;
+    --red: #F4B6AE; --yellow: #F6E3A1; --blue: #B7D3EE; --green: #BFE3BE; --danger: #D9534F;
+    --line: 1.5px solid var(--ink); --hair: 1px solid var(--ink);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+    font: 15px/1.45 ui-monospace, Menlo, Consolas, monospace; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    border-bottom: var(--line); padding-bottom: 10px; margin-bottom: 16px; }
+  h1 { margin: 0; font: 700 22px/1.2 ui-serif, Georgia, serif; }
+  h2 { margin: 24px 0 8px; font: 700 16px/1.2 ui-serif, Georgia, serif; text-transform: uppercase; letter-spacing: .04em; }
+  .muted { color: var(--muted); }
+  .count { display: inline-block; min-width: 1.6em; text-align: center; border: var(--hair); border-radius: 3px; padding: 0 5px; margin-left: 6px; font-size: 13px; }
+  .card { background: var(--card); border: var(--line); border-radius: 3px; box-shadow: 2px 2px 0 var(--ink);
+    padding: 12px; margin: 0 0 10px; display: grid; gap: 4px 16px; grid-template-columns: 1fr auto; align-items: center; }
+  .card.pending { background: var(--yellow); }
+  .card h3 { margin: 0; font-size: 15px; }
+  .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .card.pending .meta { color: var(--ink); }
+  .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; font-weight: 700; color: var(--ink); background: var(--card); border: var(--line);
+    border-radius: 3px; box-shadow: 2px 2px 0 var(--ink); padding: 6px 12px; cursor: pointer; }
+  button:active { box-shadow: 0 0 0 var(--ink); transform: translate(2px, 2px); }
+  button.go { background: var(--green); } button.stop { background: var(--red); }
+  button:disabled { opacity: .5; cursor: default; }
+  .tablewrap { overflow-x: auto; border: var(--line); border-radius: 3px; background: var(--card); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: var(--hair); white-space: nowrap; }
+  th { background: var(--paper); font-weight: 700; }
+  tr:last-child td { border-bottom: 0; }
+  .ok { color: #1d6b2a; font-weight: 700; } .bad { color: var(--danger); font-weight: 700; } .wait { font-weight: 700; }
+  #error { display: none; border: var(--line); background: var(--red); border-radius: 3px; padding: 8px 12px; margin-bottom: 12px; }
+  .empty { color: var(--muted); padding: 8px 0; }
+  @media (max-width: 560px) { .card { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Porcelain devices</h1>
+    <div class="muted"><span id="me"></span> <button id="refresh" type="button">Refresh</button> <button id="logout" type="button">Sign out</button></div>
+  </header>
+  <div id="error" role="alert"></div>
+  <section><h2>Pending <span class="count" id="n-pending">0</span></h2><div id="pending"></div></section>
+  <section><h2>Approved <span class="count" id="n-approved">0</span></h2><div id="approved"></div></section>
+  <section><h2>Denied <span class="count" id="n-denied">0</span></h2><div id="denied"></div></section>
+  <section>
+    <h2>Last 100 attempts</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Time (UTC)</th><th>Device</th><th>Endpoint</th><th>Kind</th><th>Outcome</th><th>Reason</th><th>HTTP</th><th>ms</th><th>Country</th></tr></thead>
+      <tbody id="attempts"></tbody>
+    </table></div>
+  </section>
+</main>
+<script nonce="{{nonce}}">
+"use strict";
+const $ = (id) => document.getElementById(id);
+const el = (tag, props, ...kids) => {
+  const node = document.createElement(tag);
+  if (props) for (const [k, v] of Object.entries(props)) { if (k === "class") node.className = v; else node.setAttribute(k, v); }
+  for (const kid of kids) node.append(kid);
+  return node;
+};
+const when = (s) => s ? new Date(s * 1000).toISOString().replace("T", " ").slice(0, 19) : "-";
+const showError = (msg) => { const box = $("error"); box.textContent = msg || ""; box.style.display = msg ? "block" : "none"; };
+
+async function act(action, keyId, button) {
+  button.disabled = true;
+  try {
+    const res = await fetch("/admin/api/" + action, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-requested-with": "porcelain-admin" },
+      body: JSON.stringify({ keyId }),
+    });
+    if (!res.ok) throw new Error(action + " failed (" + res.status + ")");
+    showError("");
+  } catch (e) { showError(String(e.message || e)); }
+  await load();
+}
+
+function deviceCard(d, usage, cap, buttons) {
+  const used = usage.filter((u) => u.key_id === d.key_id);
+  const today = used.find((u) => u.day === state.today);
+  const week = used.reduce((sum, u) => sum + u.count, 0);
+  const card = el("div", { class: "card " + d.status },
+    el("div", null,
+      el("h3", null, d.name || "(no name)"),
+      el("div", { class: "meta" }, [d.system, d.app_version, d.env, d.country || "?"].filter(Boolean).join(" · ")),
+      el("div", { class: "meta" }, "first seen " + when(d.first_seen) + " · last seen " + when(d.last_seen)
+        + (d.decided_by ? " · " + d.status + " by " + d.decided_by + " " + when(d.decided_at) : "")),
+      el("div", { class: "meta" }, "today " + (today ? today.count : 0) + " / " + cap + " · 7 days " + week),
+      el("div", { class: "meta" }, "key " + d.key_id.slice(0, 12) + "…")),
+    el("div", { class: "buttons" }, ...buttons.map(([label, action, cls]) => {
+      const b = el("button", { type: "button", class: cls }, label);
+      b.addEventListener("click", () => act(action, d.key_id, b));
+      return b;
+    })));
+  return card;
+}
+
+const ACTIONS = {
+  pending: [["Approve", "approve", "go"], ["Deny", "deny", "stop"]],
+  approved: [["Revoke", "revoke", "stop"]],
+  denied: [["Approve", "approve", "go"]],
+};
+let state = { today: "" };
+
+function render(data) {
+  state = data;
+  $("me").textContent = data.me;
+  for (const status of ["pending", "approved", "denied"]) {
+    const list = data.devices.filter((d) => d.status === status);
+    $("n-" + status).textContent = String(list.length);
+    const box = $(status);
+    box.replaceChildren(...(list.length ? list.map((d) => deviceCard(d, data.usage, data.dailyCap, ACTIONS[status])) : [el("div", { class: "empty" }, "None.")]));
+  }
+  const rows = data.attempts.map((a) => {
+    const cls = a.outcome === "ok" ? "ok" : (a.outcome === "pending" ? "wait" : "bad");
+    return el("tr", null,
+      el("td", null, when(a.at)), el("td", null, a.device_name || (a.key_id ? a.key_id.slice(0, 8) + "…" : "-")),
+      el("td", null, a.endpoint), el("td", null, a.kind || "-"), el("td", { class: cls }, a.outcome),
+      el("td", null, a.reason || "-"), el("td", null, String(a.http)), el("td", null, a.ms == null ? "-" : String(a.ms)),
+      el("td", null, a.country || "-"));
+  });
+  $("attempts").replaceChildren(...(rows.length ? rows : [el("tr", null, el("td", { colspan: "9", class: "empty" }, "No attempts yet."))]));
+}
+
+async function load() {
+  try {
+    const res = await fetch("/admin/api/state", { headers: { accept: "application/json" } });
+    if (res.status === 401) { location.reload(); return; }
+    if (!res.ok) throw new Error("Could not load (" + res.status + ")");
+    render(await res.json());
+    showError("");
+  } catch (e) { showError(String(e.message || e)); }
+}
+
+$("refresh").addEventListener("click", load);
+$("logout").addEventListener("click", async () => {
+  await fetch("/admin/logout", { method: "POST", headers: { "x-requested-with": "porcelain-admin" } });
+  location.reload();
+});
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>

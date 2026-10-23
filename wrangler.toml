@@ -1,0 +1,26 @@
+name = "porcelain-api"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+# No `routes` block on purpose: the custom domain is owned by Terraform (terraform/main.tf).
+# No secrets here. Set them once per deployment with
+#   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put ADMIN_TOKEN        # at least 32 random characters
+# (local dev: .dev.vars, git-ignored). Deploys with wrangler keep them.
+
+# Per-deployment values: change these for your own fork. See README "Configuration".
+[vars]
+ENV = "prod"                                              # "dev" allows simulator software keys and development App Attest
+APP_ID_PREFIX_TEAM_BUNDLE = "ABCDE12345.com.example.app"  # Apple team id + "." + bundle id of YOUR app (App Attest checks the RP id hash against it)
+ADMIN_ACCESS_AUD = "placeholder-access-aud"               # optional: Cloudflare Access application audience tag ("placeholder..." keeps the token login)
+ADMIN_ACCESS_TEAM_DOMAIN = "placeholder.cloudflareaccess.com"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "porcelain-api"
+# Placeholder. CI replaces it with the Terraform output (scripts/render-wrangler.sh); locally,
+# `wrangler dev` and the tests use a simulated database and ignore the value.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
