@@ -1,7 +1,8 @@
 name: Deploy
 
-# Manual until the first deploy has succeeded; then add `push: { branches: [main] }` here.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
