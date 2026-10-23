@@ -2,6 +2,8 @@
 
 A Cloudflare Worker (`porcelain-api`) that lets one iOS app ask Claude questions without the app holding an Anthropic key. It proxies a small, fixed set of requests (read a nutrition label, look a food up by name, estimate from a picture) for devices that proved they are the real app and that the owner approved by hand. The wire contract is in [docs/WIRE.md](docs/WIRE.md).
 
+A fourth request family, the **day review** (`/v1/review`, `/v1/review/status`, `/v1/review/cancel`), takes structured day data, owns its prompt and runs it through Anthropic's Message Batches API; see WIRE.md section 9.
+
 ## Architecture
 
 1. The app asks `POST /v1/challenge` for a one-time challenge, then enrols with an Apple **App Attest** attestation (`/v1/enroll`). The Worker verifies the certificate chain to Apple's root, the nonce, the app id hash (`APP_ID_PREFIX_TEAM_BUNDLE`) and the key id.
@@ -27,7 +29,7 @@ See [SECURITY.md](SECURITY.md) for reporting and the threat model.
 ## Layout
 
 ```
-src/            Worker code (TypeScript)        test/        vitest (workers pool), 205 tests
+src/            Worker code (TypeScript)        test/        vitest (workers pool), 241 tests
 migrations/     D1 schema                       docs/WIRE.md the wire contract
 terraform/      D1 + custom domain + R2 state   scripts/     bootstrap-state.sh, render-wrangler.sh
 .github/        ci.yml, deploy.yml

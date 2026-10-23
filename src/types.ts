@@ -37,6 +37,11 @@ export const LIMITS = {
   maxValueChars: 16,
   perMinute: 10,
   perDay: 200,
+  reviewsPerDay: 40,
+  maxReviewBodyBytes: 65_536,
+  maxReviewEntries: 60,
+  maxReviewTimeChars: 40,
+  reviewRetentionSeconds: 7 * 86_400,
   challengesPerIpPerHour: 10,
   challengeTtlSeconds: 300,
   timestampSkewSeconds: 300,
@@ -49,11 +54,11 @@ export const LIMITS = {
 export type InvalidReason =
   | "headers" | "timestamp" | "signature" | "assertion" | "attestation" | "challenge" | "rp_id"
   | "chain" | "nonce" | "schema" | "unknown_field" | "type" | "kind_fields" | "image" | "too_large"
-  | "name" | "context" | "simulator_not_allowed";
+  | "name" | "context" | "simulator_not_allowed" | "time" | "entries" | "id" | "range";
 
 export type ErrorCode =
   | "invalid" | "pending" | "denied" | "unknown_device" | "replay" | "refused" | "incomplete"
-  | "unreadable" | "limit" | "upstream" | "internal";
+  | "unreadable" | "limit" | "upstream" | "internal" | "not_found";
 
 export interface ErrorBody {
   error: ErrorCode;
@@ -173,4 +178,27 @@ export interface ClaudeCall {
   effort: Effort;
   maxSearches: number;
   schema: Record<string, unknown>;
+}
+
+/** The validated `/v1/review` body (WIRE.md "Day review"). Optional nutrients are absent when unknown. */
+export interface ReviewEntry {
+  time: string;
+  name: string;
+  grams: number;
+  kcal: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+  fibre?: number;
+  sugars?: number;
+  saturatedFat?: number;
+  salt?: number;
+}
+
+export interface ReviewBody {
+  dutch: boolean;
+  time: string;
+  targets: { kcal: number; activeKcal: number; protein: number; fat: number; carbs: number };
+  eaten: { kcal: number; protein: number; fat: number; carbs: number };
+  entries: ReviewEntry[];
 }

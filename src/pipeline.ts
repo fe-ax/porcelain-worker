@@ -52,7 +52,7 @@ const cap = (text: string | null | undefined, max = 64): string | null =>
 export interface AttemptLog {
   at: number;
   keyId: string | null;
-  endpoint: "challenge" | "enroll" | "request" | "status";
+  endpoint: "challenge" | "enroll" | "request" | "status" | "review" | "review_status" | "review_cancel";
   kind?: RequestKind | null;
   outcome: string;
   reason?: string | null;
