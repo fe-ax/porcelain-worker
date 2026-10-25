@@ -15,6 +15,9 @@ resource "cloudflare_d1_database" "this" {
   lifecycle {
     # Deleting the database deletes every device record. Never let a plan do it silently.
     prevent_destroy = true
+    # The provider reports these as "known after apply" on every plan, which shows a needless in-place update.
+    # Terraform warns that ignoring them is redundant; it is not (removing this brought the update back).
+    ignore_changes = [file_size, num_tables, version]
   }
 }
 
