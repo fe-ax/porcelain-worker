@@ -24,6 +24,17 @@ beforeEach(async () => {
   await seedDevice("key-approved", "approved");
 });
 
+describe("an auto-approved device", () => {
+  it("passes the approval check", async () => {
+    await testEnv.DB.prepare(
+      "UPDATE devices SET decided_at = ?, decided_by = 'auto' WHERE key_id = 'key-approved'",
+    ).bind(Math.floor(Date.now() / 1000)).run();
+    const stub = claudeStub(okReply());
+    expect((await send(stub, labelBody())).status).toBe(200);
+    expect(stub.fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("an approved device", () => {
   it("gets a label answer, and the attempt and usage are recorded", async () => {
     const stub = claudeStub(okReply());

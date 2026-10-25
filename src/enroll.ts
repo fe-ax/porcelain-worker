@@ -70,14 +70,17 @@ export async function handleEnroll(request: Request, env: Env, now: () => number
     keyId = result.keyId;
 
     // INSERT OR IGNORE: an existing key id keeps its status, counter and name (a denied device stays denied).
+    // AUTO_APPROVE ("true" only) applies to the INSERT of a NEW row alone: it is stored approved, decided_by 'auto'.
+    const auto = env.AUTO_APPROVE === "true";
     await env.DB.prepare(
       `INSERT OR IGNORE INTO devices
-         (key_id, public_key, counter, status, env, name, app_version, system, country, first_seen, last_seen)
-       VALUES (?, ?, 0, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+         (key_id, public_key, counter, status, env, name, app_version, system, country, first_seen, last_seen, decided_at, decided_by)
+       VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
-        result.keyId, result.publicKey, body.device.env, body.device.name, body.device.appVersion,
-        body.device.system, country?.slice(0, 8) ?? null, seconds, seconds,
+        result.keyId, result.publicKey, auto ? "approved" : "pending", body.device.env, body.device.name,
+        body.device.appVersion, body.device.system, country?.slice(0, 8) ?? null, seconds, seconds,
+        auto ? seconds : null, auto ? "auto" : null,
       )
       .run();
     const row = await env.DB.prepare("SELECT status FROM devices WHERE key_id = ?")
