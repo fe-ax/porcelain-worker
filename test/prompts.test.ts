@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  LOOKUP_SYSTEM, NAME_SYSTEM, PHOTO_SYSTEM, PICTURE_SYSTEM, buildClaudeCall, contextText, nameSchema,
+  DUTCH_NOTE, LOOKUP_SYSTEM, NAME_SYSTEM, PHOTO_SYSTEM, PICTURE_SYSTEM, buildClaudeCall, contextText, nameSchema,
   nutritionSchema, NUTRITION_PROPERTY_NAMES,
 } from "../src/prompts";
 import type { ValidatedRequest } from "../src/types";
@@ -82,6 +82,22 @@ describe("buildClaudeCall", () => {
       { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "/9j/2Q==" } },
       { type: "text", text: "Read the nutrition label in this photo." },
     ]);
+  });
+  it("dutch appends the language note to label, lookup and picture, never to name, and not when false", () => {
+    for (const kind of ["label", "picture"] as const) {
+      expect(buildClaudeCall(base(kind, { image, dutch: true })).system).toBe(buildClaudeCall(base(kind, { image })).system + DUTCH_NOTE);
+      expect(buildClaudeCall(base(kind, { image, dutch: false })).system).not.toContain("the app is set to Dutch");
+    }
+    const lookup = buildClaudeCall(base("lookup", { name: "Skyr", dutch: true }));
+    expect(lookup.system).toBe(LOOKUP_SYSTEM + DUTCH_NOTE);
+    expect(buildClaudeCall(base("name", { image, dutch: true })).system).toBe(NAME_SYSTEM);
+    expect(DUTCH_NOTE).toContain("This overrides every instruction above that asks for English.");
+  });
+  it("the English prompts let the app choose the language of the note and the portion names", () => {
+    for (const system of [PHOTO_SYSTEM, LOOKUP_SYSTEM, PICTURE_SYSTEM]) {
+      expect(system).toContain("in the language the app asks for");
+      expect(system).not.toMatch(/one short English sentence|singular English name/);
+    }
   });
   it("picture: web search, search effort, context appended", () => {
     const call = buildClaudeCall(base("picture", { image, context: { name: "Pasta", values: [{ field: "fat", text: "3" }] } }));

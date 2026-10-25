@@ -134,6 +134,8 @@ Unknown fields anywhere are rejected (400 `invalid`, `reason: "unknown_field"`).
     "name": "AH Skyr",               // <= 120 chars, may be empty
     "values": [ { "field": "kcal", "text": "63" } ]
   },
+  "dutch": true,                     // optional boolean, default false: the app runs in Dutch. label, lookup, picture: the note and the portion
+                                     // names are written in Dutch (the prompt gets one extra line). name, images: accepted, no effect.
   "options": {                       // optional; each clamped, not rejected (unknown field is rejected)
     "effortLabel": "low",            // "low" | "medium" | "high", default "low"
     "effortSearch": "high",          // "low" | "medium" | "high", default "high"

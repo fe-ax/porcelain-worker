@@ -114,7 +114,7 @@ export function checkJpeg(bytes: Uint8Array): { width: number; height: number } 
 
 // MARK: - /v1/request
 
-const REQUEST_FIELDS = ["kind", "image", "name", "context", "options"] as const;
+const REQUEST_FIELDS = ["kind", "image", "name", "context", "options", "dutch"] as const;
 const EFFORTS: readonly Effort[] = ["low", "medium", "high"];
 const VALUE_TEXT = /^[0-9.,-]+$/;
 
@@ -159,7 +159,9 @@ export function validateRequestBody(raw: Uint8Array): ValidatedRequest {
   const context = parseContext(body["context"]);
   const options = parseOptions(body["options"]);
 
-  const validated: ValidatedRequest = { kind, context, options };
+  const dutchValue = body["dutch"];
+  if (dutchValue !== undefined && typeof dutchValue !== "boolean") throw invalid("type", "dutch");
+  const validated: ValidatedRequest = { kind, context, options, dutch: dutchValue === true };
   if (image) validated.image = image;
   if (name !== undefined) validated.name = name;
   return validated;
