@@ -1,6 +1,44 @@
+# Dependency updates. Everything in package.json is a devDependency (wrangler, vitest, types): the deployed
+# Worker bundles no npm package, so these updates touch the build and test tooling only.
+# CI (ci.yml) runs typecheck, tests and terraform validate on every Dependabot PR; merging one deploys.
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: npm
+    directory: /
     schedule:
-      interval: "weekly"
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      # One PR a week for the routine bumps, majors on their own.
+      tooling:
+        applies-to: version-updates
+        update-types: [minor, patch]
+        patterns: ["*"]
+      # Security fixes (often transitive: undici, zod, sharp via wrangler/miniflare) in one PR.
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: terraform
+    directory: /terraform
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: build
+      include: scope
