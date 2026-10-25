@@ -37,6 +37,14 @@ describe("validateRequestBody: accepted", () => {
     expect(request.context.values).toHaveLength(2);
   });
 
+  it("dutch is optional, a boolean, and defaults to false", () => {
+    expect(validate(label()).dutch).toBe(false);
+    expect(validate(label({ dutch: true })).dutch).toBe(true);
+    expect(validate({ kind: "lookup", name: "Skyr", dutch: true }).dutch).toBe(true);
+    expect(() => validate(label({ dutch: "yes" }))).toThrow(HttpError);
+    expect(() => validate(label({ dutch: 1 }))).toThrow(HttpError);
+  });
+
   it("accepts picture and name requests", () => {
     expect(validate({ kind: "picture", image: jpegBase64() }).kind).toBe("picture");
     expect(validate({ kind: "name", image: jpegBase64() }).kind).toBe("name");

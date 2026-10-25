@@ -137,6 +137,8 @@ export interface ValidatedRequest {
   name?: string;
   context: RequestContext;
   options: RequestOptions;
+  /** The app runs in Dutch: label, lookup and picture answers write the note and portion names in Dutch. Default false. */
+  dutch?: boolean;
 }
 
 /** The nutrition answer object (AIPhotoSchema), all 18 properties present. */

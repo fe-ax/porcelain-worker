@@ -16,9 +16,9 @@ export const PHOTO_SYSTEM = `You read the nutrition table of a food label from o
 - A value that is not printed, or that you cannot read with certainty, is null. Never guess or estimate.
 - name: brand and product as printed on the pack, if visible; else null.
 - confidence: how sure you are that every number was read correctly; low when parts are blurred, cut off, in glare or at a steep angle.
-- note: at most one short English sentence (for example what could not be read), or null.
+- note: at most one short sentence in English, or in the language the app asks for (for example what could not be read), or null.
 - portion_grams is always null for a label.
-- portions: only what the label itself prints about a unit: "1 portie (30 g)", "1 plak (35 g)", "1 koekje = 12 g", "per stuk 60 g". One entry per printed unit: a short singular English name ("portion", "slice", "cookie", "piece") and its weight in grams as printed. Never work a weight out; an empty list when the label prints none.
+- portions: only what the label itself prints about a unit: "1 portie (30 g)", "1 plak (35 g)", "1 koekje = 12 g", "per stuk 60 g". One entry per printed unit: a short singular name in English, or in the language the app asks for ("portion", "slice", "cookie", "piece") and its weight in grams as printed. Never work a weight out; an empty list when the label prints none.
 - If there is no readable nutrition table, give null for every value and say so in note.
 - The user turn may end with "What the app already knows about this food". Use it to identify the exact product and as a cross-check, never as a replacement for the evidence: what the photo or a found page shows wins over it. Where your result disagrees clearly with a value there, say so in note. A value there that you cannot verify is not a reason to copy it.`;
 
@@ -32,10 +32,10 @@ export const LOOKUP_SYSTEM = `You look up the nutrition values of a food product
 - A value you do not know is null. Never invent a precise-looking number: for an ambiguous name give typical values and say so in note.
 - name: the product name, cleaned up (brand and product), or null.
 - confidence: high only when the numbers came from a page for that exact product; medium for a close variant or a typical food of that kind; low for a guess.
-- note: at most one short English sentence (the source, or which variant you assumed), or null.
+- note: at most one short sentence in English, or in the language the app asks for (the source, or which variant you assumed), or null.
 - If the text is not a food, give null for every value and say so in note.
 - portion_grams is always null.
-- portions: the common household units of this food and what one weighs in grams, from the pack ("1 plak 35 g", "1 portie 30 g") or the usual size: a short singular English name ("slice", "egg", "bar", "tbsp", "glass") and grams, at most 4, most natural first. Only units people really count this food in; an empty list for a food eaten by weight (rice, minced meat).
+- portions: the common household units of this food and what one weighs in grams, from the pack ("1 plak 35 g", "1 portie 30 g") or the usual size: a short singular name in English, or in the language the app asks for ("slice", "egg", "bar", "tbsp", "glass") and grams, at most 4, most natural first. Only units people really count this food in; an empty list for a food eaten by weight (rice, minced meat).
 - The user turn may end with "What the app already knows about this food". Use it to identify the exact product and as a cross-check, never as a replacement for the evidence: what the photo or a found page shows wins over it. Where your result disagrees clearly with a value there, say so in note. A value there that you cannot verify is not a reason to copy it.`;
 
 export const NAME_SYSTEM = `You name a food from one photo, for a personal food log. Reply only with the JSON object the schema describes. The food is often Dutch (Albert Heijn, Jumbo products, Dutch dishes).
@@ -50,14 +50,21 @@ export const PICTURE_SYSTEM = `You identify a food from one photo, for a persona
 - For an unpackaged food or a dish, give typical values per 100 g as served; search the web when that helps.
 - Nutrition values are per 100 g (basis_grams 100, basis_unit "g"; "ml" only for drinks), never a portion total.
 - portion_grams: your best guess of the weight in grams of the food on the photo, what would be eaten (a plate, a bowl, a slice, one pack or bar). Use the pack's printed net weight when it is visible, else judge from the plate, cutlery, hands or other objects for scale. Round to 5 g. null when you cannot judge it.
-- portions: the common household units of this food and what one weighs in grams (a printed portion or unit weight when visible, else the usual size): a short singular English name ("slice", "egg", "bar", "tbsp") and grams, at most 4, most natural first. An empty list for a food eaten by weight.
+- portions: the common household units of this food and what one weighs in grams (a printed portion or unit weight when visible, else the usual size): a short singular name in English, or in the language the app asks for ("slice", "egg", "bar", "tbsp") and grams, at most 4, most natural first. An empty list for a food eaten by weight.
 - Energy in kcal (energy_kcal) and kJ (energy_kj); protein, fat, saturated_fat, carbs, sugars, fibre, salt and sodium in grams. carbs_include_fibre is false (EU style).
 - A value you do not know is null. Never invent a precise-looking number.
 - name: always filled in: brand and product, or a plain description ("pasta with tomato sauce").
 - confidence: high only when the numbers came from a page for that exact product; medium for a close variant or typical values; low for a guess.
-- note: at most one short English sentence saying what you recognised and whether the values came from a web page (name the site) or are typical.
+- note: at most one short sentence in English, or in the language the app asks for, saying what you recognised and whether the values came from a web page (name the site) or are typical.
 - If the photo shows no food, give null for every value and say so in note.
 - The user turn may end with "What the app already knows about this food". Use it to identify the exact product and as a cross-check, never as a replacement for the evidence: what the photo or a found page shows wins over it. Where your result disagrees clearly with a value there, say so in note. A value there that you cannot verify is not a reason to copy it.`;
+
+/** Appended to the label, lookup and picture prompts when the app runs in Dutch (AILanguage.dutchNote in the app). */
+export const DUTCH_NOTE = `
+
+- Language: the app is set to Dutch (Nederlands). Write note in Dutch, for example "Productnaam niet zichtbaar op de foto.", and give every portions name as a short singular Dutch word ("portie", "plak", "koekje", "stuk"). This overrides every instruction above that asks for English. Brand and product names stay exactly as printed; the JSON keys and enum values stay as the schema defines them.`;
+
+const inLanguage = (system: string, dutch: boolean | undefined): string => (dutch === true ? system + DUTCH_NOTE : system);
 
 export const PHOTO_TASK = "Read the nutrition label in this photo.";
 export const NAME_TASK = "Give the brand and name of the food in this photo.";
@@ -104,11 +111,11 @@ export function nutritionSchema(): Record<string, unknown> {
       description: "True only when the label's carbohydrates include fibre (US Total Carbohydrate).",
     },
     confidence: choice(["low", "medium", "high"], "How sure you are that every number was read correctly."),
-    note: nullable("string", "At most one short English sentence, e.g. what could not be read."),
+    note: nullable("string", "At most one short sentence in English, or in the language the app asks for, e.g. what could not be read."),
     portion_grams: number("Picture estimates only: the guessed weight in grams of the food on the photo. null for labels and name lookups."),
     portions: {
       type: "array",
-      description: "Named portions of the food: a short singular English name and the weight of one in grams. Empty when there are none.",
+      description: "Named portions of the food: a short singular name in English (or in the language the app asks for) and the weight of one in grams. Empty when there are none.",
       items: {
         type: "object",
         properties: {
@@ -200,7 +207,7 @@ export function buildClaudeCall(req: ValidatedRequest): ClaudeCall {
       throw new Error("images requests go to Kagi, not Claude");
     case "label":
       return {
-        system: PHOTO_SYSTEM,
+        system: inLanguage(PHOTO_SYSTEM, req.dutch),
         content: imageContent(image, taskText(PHOTO_TASK, context, true)),
         webSearch: false,
         effort: options.effortLabel,
@@ -209,7 +216,7 @@ export function buildClaudeCall(req: ValidatedRequest): ClaudeCall {
       };
     case "picture":
       return {
-        system: PICTURE_SYSTEM,
+        system: inLanguage(PICTURE_SYSTEM, req.dutch),
         content: imageContent(image, taskText(PICTURE_TASK, context, true)),
         webSearch: true,
         effort: options.effortSearch,
@@ -227,7 +234,7 @@ export function buildClaudeCall(req: ValidatedRequest): ClaudeCall {
       };
     case "lookup":
       return {
-        system: LOOKUP_SYSTEM,
+        system: inLanguage(LOOKUP_SYSTEM, req.dutch),
         content: [{ type: "text", text: taskText(lookupTask(req.name ?? ""), context, false) }],
         webSearch: true,
         effort: options.effortSearch,
