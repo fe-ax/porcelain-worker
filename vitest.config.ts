@@ -9,7 +9,7 @@ export default defineConfig(async () => {
         wrangler: { configPath: "./wrangler.toml" },
         miniflare: {
           // Test-only values; the real secret is never in a file.
-          bindings: { TEST_MIGRATIONS: migrations, ENV: "dev", ANTHROPIC_API_KEY: "test-anthropic-key" },
+          bindings: { TEST_MIGRATIONS: migrations, ENV: "dev", AUTO_APPROVE: "false", ANTHROPIC_API_KEY: "test-anthropic-key" },
         },
       }),
     ],

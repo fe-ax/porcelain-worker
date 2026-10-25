@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import { b64encode, sha256 } from "../src/attest";
 import { clientDataHash } from "../src/assert";
-import { LIMITS } from "../src/types";
+import { LIMITS, type Env } from "../src/types";
 import { attemptRows, bytesOf, freshNonce, resetDb, testEnv } from "./helpers";
 
 // End to end through the router with a real software key (ENV=dev in the test bindings).
@@ -14,8 +14,8 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
     body: bytesOf(body),
   });
 
-const call = async (request: Request): Promise<{ status: number; json: Record<string, unknown> }> => {
-  const response = await worker.fetch(request, testEnv);
+const call = async (request: Request, env: Env = testEnv): Promise<{ status: number; json: Record<string, unknown> }> => {
+  const response = await worker.fetch(request, env);
   return { status: response.status, json: (await response.json()) as Record<string, unknown> };
 };
 
@@ -39,7 +39,9 @@ const enrollBody = (key: Key, challengeText: string, name = "Alice's iPhone"): R
   device: { name, appVersion: "1.0 (1)", system: "iOS 27.0", env: "simulator" },
 });
 
-const enroll = async (key: Key, name?: string) => call(post("/v1/enroll", enrollBody(key, await challenge(), name)));
+const enroll = async (key: Key, name?: string, env: Env = testEnv) =>
+  call(post("/v1/enroll", enrollBody(key, await challenge(), name)), env);
+const autoEnv = (value: string | undefined): Env => ({ ...testEnv, AUTO_APPROVE: value }) as Env;
 
 function derFromRaw(raw: Uint8Array): Uint8Array {
   const int = (b: Uint8Array): number[] => {
@@ -191,5 +193,43 @@ describe("/v1/status", () => {
     await enroll(key);
     expect((await call(await statusRequest(key, 1))).status).toBe(200);
     expect(await call(await statusRequest(key, 1))).toMatchObject({ status: 409, json: { error: "replay", reason: "counter" } });
+  });
+});
+
+describe("/v1/enroll with AUTO_APPROVE", () => {
+  const rowOf = (keyId: string) =>
+    testEnv.DB.prepare("SELECT status, counter, name, decided_at, decided_by FROM devices WHERE key_id = ?").bind(keyId).first<{
+      status: string; counter: number; name: string; decided_at: number | null; decided_by: string | null;
+    }>();
+
+  it("off, missing or not exactly \"true\": a new device is pending", async () => {
+    for (const value of ["false", undefined, "TRUE", "1", "true "]) {
+      const key = await makeKey();
+      expect(await enroll(key, undefined, autoEnv(value))).toEqual({ status: 200, json: { status: "pending" } });
+      expect(await rowOf(key.keyId)).toMatchObject({ status: "pending", decided_at: null, decided_by: null });
+    }
+  });
+
+  it("on: a new device is approved, decided_by auto, decided_at set", async () => {
+    const key = await makeKey();
+    const before = Math.floor(Date.now() / 1000);
+    expect(await enroll(key, undefined, autoEnv("true"))).toEqual({ status: 200, json: { status: "approved" } });
+    const row = await rowOf(key.keyId);
+    expect(row).toMatchObject({ status: "approved", counter: 0, decided_by: "auto" });
+    expect(row?.decided_at).toBeGreaterThanOrEqual(before);
+  });
+
+  it("on: a known pending or denied device is unchanged, a revoke sticks", async () => {
+    const pending = await makeKey();
+    await enroll(pending, "Pending", autoEnv("false"));
+    expect(await enroll(pending, "Again", autoEnv("true"))).toEqual({ status: 200, json: { status: "pending" } });
+    expect(await rowOf(pending.keyId)).toMatchObject({ status: "pending", name: "Pending", decided_by: null });
+
+    const revoked = await makeKey();
+    await enroll(revoked, "Auto", autoEnv("true"));
+    await testEnv.DB.prepare("UPDATE devices SET status = 'denied', counter = 7, decided_by = 'me' WHERE key_id = ?")
+      .bind(revoked.keyId).run();
+    expect(await enroll(revoked, "Renamed", autoEnv("true"))).toEqual({ status: 200, json: { status: "denied" } });
+    expect(await rowOf(revoked.keyId)).toMatchObject({ status: "denied", counter: 7, name: "Auto", decided_by: "me" });
   });
 });

@@ -13,6 +13,8 @@ export interface Env {
   ANTHROPIC_API_KEY: string;
   /** Secret (wrangler secret put ADMIN_TOKEN), at least 32 characters. Logs into /admin; rotating it ends all sessions. */
   ADMIN_TOKEN: string;
+  /** Optional. Only the exact value "true" stores a NEWLY enrolled device as approved (decided_by 'auto'). */
+  AUTO_APPROVE?: string;
 }
 
 export type DeviceStatus = "pending" | "approved" | "denied";

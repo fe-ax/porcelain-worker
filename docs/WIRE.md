@@ -11,7 +11,7 @@ secret); the app never sends a prompt, a model id or a token.
 | Path | Purpose | Auth |
 |---|---|---|
 | `POST /v1/challenge` | one-time random challenge for enrolment | none (rate limited per IP) |
-| `POST /v1/enroll` | register a device with its App Attest attestation; the device becomes `pending` | attestation |
+| `POST /v1/enroll` | register a device with its App Attest attestation; the device becomes `pending` (`approved` when `AUTO_APPROVE` is on, see 1.2) | attestation |
 | `POST /v1/request` | one AI request (label, lookup, picture, name) | assertion + status `approved` |
 | `POST /v1/status` | is this device pending / approved / denied (no Claude call, no daily-cap use) | assertion |
 | `/admin`, `/admin/api/*` | dashboard (see `admin.ts`) | Cloudflare Access JWT, not part of the app contract |
@@ -64,7 +64,13 @@ On success the device row is stored (`status = "pending"`, the public key, count
 { "status": "pending" }
 ```
 
-Enrolling an already known `keyId` is idempotent: no new row, 200 with the current status (a `denied` device stays denied).
+Exception: when the Worker var `AUTO_APPROVE` is exactly `"true"` (anything else, or missing, is off), a NEWLY enrolled device is stored
+`approved` with `decided_at` = now and `decided_by = "auto"`, and the answer is `{ "status": "approved" }`. The dashboard shows it as
+"approved by auto". Approved devices keep the per-device limits (4.1). Set the var to `"false"` (or remove it) to go back to manual approval;
+devices already approved stay approved until revoked.
+
+Enrolling an already known `keyId` is idempotent: no new row, 200 with the current status (a `denied` device stays denied, a `pending`
+one stays pending, even with `AUTO_APPROVE` on: auto-approval applies only to the INSERT of a new row, so a revoke sticks).
 
 ### 1.3 `POST /v1/request`
 
