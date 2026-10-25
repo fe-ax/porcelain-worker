@@ -19,6 +19,8 @@ env:
   AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
   TF_VAR_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  TF_VAR_zone_name: ${{ vars.ZONE_NAME }}
+  TF_VAR_hostname: ${{ vars.WORKER_HOSTNAME }}
   TF_INPUT: "false"
 
 jobs:
@@ -45,8 +47,8 @@ jobs:
       - name: Terraform apply
         run: terraform -chdir=terraform apply tfplan
 
-      - name: Render wrangler.toml with the D1 database id
-        run: scripts/render-wrangler.sh "$(terraform -chdir=terraform output -raw d1_database_id)" "${{ vars.APP_ID_PREFIX_TEAM_BUNDLE }}"
+      - name: Render wrangler.toml with the D1 database id and the per-deployment vars
+        run: scripts/render-wrangler.sh "$(terraform -chdir=terraform output -raw d1_database_id)" "${{ vars.APP_ID_PREFIX_TEAM_BUNDLE }}" "${{ vars.AUTO_APPROVE }}"
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply DB --remote
       - name: Deploy the Worker

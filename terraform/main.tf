@@ -15,8 +15,6 @@ resource "cloudflare_d1_database" "this" {
   lifecycle {
     # Deleting the database deletes every device record. Never let a plan do it silently.
     prevent_destroy = true
-    # Changed by the database itself (size, table count); not configuration.
-    ignore_changes = [file_size, num_tables, version]
   }
 }
 

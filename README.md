@@ -1,13 +1,13 @@
 # Porcelain Worker
 
-A Cloudflare Worker (`porcelain-api`) that lets one iOS app ask Claude questions without the app holding an Anthropic key. It proxies a small, fixed set of requests (read a nutrition label, look a food up by name, estimate from a picture) for devices that proved they are the real app and that the owner approved by hand. The wire contract is in [docs/WIRE.md](docs/WIRE.md).
+A Cloudflare Worker (`porcelain-api`) that lets one iOS app ask Claude questions without the app holding an Anthropic key. It proxies a small, fixed set of requests (read a nutrition label, look a food up by name, estimate from a picture) for devices that proved they are the real app and that the owner approved. The wire contract is in [docs/WIRE.md](docs/WIRE.md).
 
 A fourth request family, the **day review** (`/v1/review`, `/v1/review/status`, `/v1/review/cancel`), takes structured day data, owns its prompt and runs it through Anthropic's Message Batches API; see WIRE.md section 9.
 
 ## Architecture
 
 1. The app asks `POST /v1/challenge` for a one-time challenge, then enrols with an Apple **App Attest** attestation (`/v1/enroll`). The Worker verifies the certificate chain to Apple's root, the nonce, the app id hash (`APP_ID_PREFIX_TEAM_BUNDLE`) and the key id.
-2. A new device is `pending`. The owner approves or denies it in the `/admin` dashboard.
+2. A new device is `pending`. The owner approves or denies it in the `/admin` dashboard (or, with `AUTO_APPROVE` on, it is approved at once; see Configuration).
 3. Each `/v1/request` carries an App Attest **assertion** (signature + monotonic counter) over the request body hash.
 4. The body is a closed schema (kind, image, product context, options). The Worker builds the prompt, model, tools and limits itself.
 5. The Worker calls the Anthropic API with `ANTHROPIC_API_KEY` (a Worker secret) and returns only the parsed answer.
@@ -20,7 +20,7 @@ A fourth request family, the **day review** (`/v1/review`, `/v1/review/status`, 
 ## Security model
 
 - **App Attest**: only a genuine install of the configured app (team id + bundle id) on a real Apple device can enrol; every request is signed by a key in the device's Secure Enclave, with a counter that rejects replays.
-- **Manual approval**: enrolment alone grants nothing. Only an `approved` device reaches Claude; the owner can revoke at any time.
+- **Manual approval** (the default): enrolment alone grants nothing. Only an `approved` device reaches Claude; the owner can revoke at any time. `AUTO_APPROVE=true` drops this step, leaving App Attest as the only gate: use it only while no one else can install the app.
 - **Fixed request**: the app can never send a prompt, model id or tool list. Bodies are validated against a closed schema with size limits, per-device rate limits and a daily cap.
 - **Admin login**: `/admin` uses an `ADMIN_TOKEN` login (HMAC-signed session cookie, at least 32 characters; rotating the token ends all sessions), or Cloudflare Access JWTs if `ADMIN_ACCESS_AUD` / `ADMIN_ACCESS_TEAM_DOMAIN` hold real values.
 
@@ -37,15 +37,16 @@ terraform/      D1 + custom domain + R2 state   scripts/     bootstrap-state.sh,
 
 ## Configuration (per deployment)
 
-Edit `wrangler.toml` `[vars]` and `terraform/variables.tf` defaults (or pass `-var`/`TF_VAR_*`) for your own deployment:
+Per-deployment values live outside the code: GitHub repository **variables** for CI (written into `wrangler.toml` or passed to Terraform at deploy time), `TF_VAR_*` or `-var` when you run Terraform yourself. The values committed in `wrangler.toml` are placeholders and safe defaults.
 
 | Setting | Where | Meaning |
 |---|---|---|
-| `APP_ID_PREFIX_TEAM_BUNDLE` | wrangler.toml | Apple team id + `.` + bundle id, e.g. `ABCDE12345.com.example.app`. App Attest only accepts this app. |
+| `APP_ID_PREFIX_TEAM_BUNDLE` | GitHub variable `APP_ID_PREFIX_TEAM_BUNDLE` (rendered into wrangler.toml) | Apple team id + `.` + bundle id, e.g. `ABCDE12345.com.example.app`. App Attest only accepts this app. |
+| `AUTO_APPROVE` | GitHub variable `AUTO_APPROVE` (rendered into wrangler.toml; default `false`) | `true` approves a newly enrolled device at once. Every genuine install of the app can then spend your Anthropic key (each within the per-device limits, and one phone can enrol several keys), so keep it `false` once the app is distributed beyond your own devices. |
 | `ENV` | wrangler.toml | `prod`; `dev` additionally accepts simulator software keys and development App Attest. Never `dev` in production. |
 | `ADMIN_ACCESS_AUD`, `ADMIN_ACCESS_TEAM_DOMAIN` | wrangler.toml | Optional Cloudflare Access. Leave the `placeholder` values to use the token login. |
 | `account_id` | Terraform (`TF_VAR_account_id`, from the `CLOUDFLARE_ACCOUNT_ID` secret in CI) | Your Cloudflare account. |
-| `zone_name`, `hostname` | terraform/variables.tf | Zone and hostname of the Worker; defaults are the author's (`fe.ax`). |
+| `zone_name`, `hostname` | GitHub variables `ZONE_NAME`, `WORKER_HOSTNAME` (`TF_VAR_zone_name`, `TF_VAR_hostname`) | Zone and hostname of the Worker, e.g. `example.com` and `api.example.com`. Required. |
 | `worker_name`, `database_name` | terraform/variables.tf and wrangler.toml | Keep both in sync. |
 
 ### Changing the Apple team id or bundle id
@@ -61,7 +62,7 @@ Change the GitHub repository **variable** `APP_ID_PREFIX_TEAM_BUNDLE` (for examp
    - Account: *Workers Scripts: Edit*, *D1: Edit*, *Workers R2 Storage: Edit* (only needed for the bootstrap; the CI token can do without it)
    - Zone: *Zone: Read*, *Workers Routes: Edit* (needed for the custom domain), resource scoped to your zone, plus *DNS: Edit* if the custom domain has to create the record.
    Adjust if `terraform plan` reports a permission error; the exact set the provider needs can differ by version.
-5. **GitHub repository secrets**: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (the workflow maps the last two to `AWS_*` for the S3 backend).
+5. **GitHub repository secrets**: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (the workflow maps the last two to `AWS_*` for the S3 backend). **Variables**: `APP_ID_PREFIX_TEAM_BUNDLE`, `ZONE_NAME`, `WORKER_HOSTNAME`, and optionally `AUTO_APPROVE`.
 6. **Worker secrets** (once, locally, never in CI):
    ```
    npx wrangler secret put ANTHROPIC_API_KEY
@@ -72,12 +73,9 @@ Change the GitHub repository **variable** `APP_ID_PREFIX_TEAM_BUNDLE` (for examp
 
 ### Adopting existing resources
 
-`terraform/imports.tf` has config-driven `import` blocks for the D1 database and the custom domain, with ids from the variables `import_d1_database_id` and `import_custom_domain_id`. The defaults are the author's live ids:
+`terraform/imports.tf` has config-driven `import` blocks for the D1 database and the custom domain, with ids from the variables `import_d1_database_id` and `import_custom_domain_id`. Both default to empty, which imports nothing: a fresh deployment simply creates the resources. To adopt resources you made by hand, set them for the first apply (`TF_VAR_import_d1_database_id`, `TF_VAR_import_custom_domain_id`).
 
-- D1 `porcelain-api`: `d2e39cbd-afcc-498a-a506-526d03949766`
-- custom domain `porcelain-api.fe.ax`: `d193b1f1c29952dd5c000bd4bc243fb06b7580e3`
-
-The import id format used is `<account_id>/<id>` for both resources. This was written from knowledge of the v5 provider, not tested against the API: check the first `terraform plan` shows "will be imported" with no changes (or only harmless ones) before applying. Once in state the blocks are no-ops. If you are deploying your own copy with nothing to adopt, delete `imports.tf`.
+The import id format used is `<account_id>/<id>` for both resources. This was written from knowledge of the v5 provider, not tested against the API: check the first `terraform plan` shows "will be imported" with no changes (or only harmless ones) before applying. Once in state the blocks are no-ops and the variables can be cleared.
 
 State locking: the S3 backend's `use_lockfile` is not enabled because R2's conditional-write support for it is not verified here. Instead the deploy workflow's `concurrency: deploy` group serialises runs. Do not run `terraform apply` locally while a deploy runs.
 
@@ -97,6 +95,6 @@ Tests use a simulated D1 and test-only values; they need no secrets or network. 
 
 Verifying App Attest chains (P-256/P-384 ECDSA) is the expensive part, which is why verified Apple intermediates are cached in D1. To see what a request costs: Cloudflare dashboard > Workers & Pages > `porcelain-api` > *Metrics* (CPU time percentiles per request), or run `npx wrangler tail porcelain-api --format pretty` and watch the per-invocation CPU/wall time; GraphQL Analytics (`workersInvocationsAdaptive`, field `cpuTimeP50/P99`) gives history. Enrolment is the heavy request; `/v1/request` should be far below the plan's CPU limit.
 
-## TODO
+## License
 
-- Choose a license (none yet; the owner decides before the repository goes public). Until then all rights are reserved.
+[MIT](LICENSE).

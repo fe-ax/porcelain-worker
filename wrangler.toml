@@ -16,9 +16,11 @@ ENV = "prod"                                              # "dev" allows simulat
 APP_ID_PREFIX_TEAM_BUNDLE = "ABCDE12345.com.example.app"  # Apple team id + "." + bundle id of YOUR app (App Attest checks the RP id hash against it)
 ADMIN_ACCESS_AUD = "placeholder-access-aud"               # optional: Cloudflare Access application audience tag ("placeholder..." keeps the token login)
 ADMIN_ACCESS_TEAM_DOMAIN = "placeholder.cloudflareaccess.com"
-# "true": a newly enrolled device is approved at once (decided_by "auto"). Set "false" (or remove) to go back to manual approval.
-# Known devices keep their status (a revoke sticks); approved devices are still limited per device.
-AUTO_APPROVE = "true"
+# "false" (default): a newly enrolled device is pending until the owner approves it in /admin.
+# "true": a newly enrolled device is approved at once (decided_by "auto"). Only for an app nobody else can install:
+# every genuine install would spend your key. Known devices keep their status (a revoke sticks).
+# CI sets it from the GitHub variable AUTO_APPROVE (scripts/render-wrangler.sh); unset leaves this value.
+AUTO_APPROVE = "false"
 
 [[d1_databases]]
 binding = "DB"
