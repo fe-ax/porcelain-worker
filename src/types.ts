@@ -11,6 +11,8 @@ export interface Env {
   ADMIN_ACCESS_TEAM_DOMAIN: string;
   /** Secret (wrangler secret put). Never in files. */
   ANTHROPIC_API_KEY: string;
+  /** Secret (wrangler secret put KAGI_API_KEY). Optional: without it `images` requests answer 502 upstream. */
+  KAGI_API_KEY?: string;
   /** Secret (wrangler secret put ADMIN_TOKEN), at least 32 characters. Logs into /admin; rotating it ends all sessions. */
   ADMIN_TOKEN: string;
   /** Optional. Only the exact value "true" stores a NEWLY enrolled device as approved (decided_by 'auto'). */
@@ -19,12 +21,12 @@ export interface Env {
 
 export type DeviceStatus = "pending" | "approved" | "denied";
 export type DeviceEnv = "production" | "development" | "simulator";
-export type RequestKind = "label" | "lookup" | "picture" | "name";
+export type RequestKind = "label" | "lookup" | "picture" | "name" | "images";
 export type Effort = "low" | "medium" | "high";
 export type NutritionFieldKey =
   | "kcal" | "carbs" | "protein" | "fat" | "fibre" | "sugars" | "saturatedFat" | "salt";
 
-export const REQUEST_KINDS: readonly RequestKind[] = ["label", "lookup", "picture", "name"];
+export const REQUEST_KINDS: readonly RequestKind[] = ["label", "lookup", "picture", "name", "images"];
 export const NUTRITION_FIELDS: readonly NutritionFieldKey[] =
   ["kcal", "carbs", "protein", "fat", "fibre", "sugars", "saturatedFat", "salt"];
 
@@ -35,6 +37,7 @@ export const LIMITS = {
   minImageSide: 64,
   maxImageSide: 4096,
   maxNameChars: 120,
+  maxImageResults: 12,
   maxContextValues: 8,
   maxValueChars: 16,
   perMinute: 10,
@@ -130,7 +133,7 @@ export interface ValidatedRequest {
   kind: RequestKind;
   /** Decoded JPEG; present for label, picture, name. */
   image?: Uint8Array;
-  /** lookup only. */
+  /** lookup and images (the search words). */
   name?: string;
   context: RequestContext;
   options: RequestOptions;
@@ -160,7 +163,16 @@ export interface NutritionAnswer {
 
 export type RequestResponse =
   | { kind: "label" | "lookup" | "picture"; answer: NutritionAnswer }
-  | { kind: "name"; answer: { name: string } };
+  | { kind: "name"; answer: { name: string } }
+  | { kind: "images"; answer: { results: ImageResult[] } };
+
+/** One picture of an `images` answer: the Kagi thumbnail (on p.kagi.com) and where it was found. */
+export interface ImageResult {
+  id: string;
+  title: string;
+  site: string | null;
+  thumbnail: string;
+}
 
 /** The headers every /v1/request and /v1/status call carries, parsed. */
 export interface AssertionHeaders {

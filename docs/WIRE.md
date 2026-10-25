@@ -12,7 +12,7 @@ secret); the app never sends a prompt, a model id or a token.
 |---|---|---|
 | `POST /v1/challenge` | one-time random challenge for enrolment | none (rate limited per IP) |
 | `POST /v1/enroll` | register a device with its App Attest attestation; the device becomes `pending` (`approved` when `AUTO_APPROVE` is on, see 1.2) | attestation |
-| `POST /v1/request` | one AI request (label, lookup, picture, name) | assertion + status `approved` |
+| `POST /v1/request` | one AI request (label, lookup, picture, name, images) | assertion + status `approved` |
 | `POST /v1/status` | is this device pending / approved / denied (no Claude call, no daily-cap use) | assertion |
 | `POST /v1/review` | start a day review (fourth request family, section 9) | assertion + status `approved` |
 | `POST /v1/review/status` | poll a review; the Worker advances the Anthropic batch | assertion + status `approved` |
@@ -127,9 +127,9 @@ Unknown fields anywhere are rejected (400 `invalid`, `reason: "unknown_field"`).
 
 ```json
 {
-  "kind": "label" | "lookup" | "picture" | "name",
+  "kind": "label" | "lookup" | "picture" | "name" | "images",
   "image": "<base64 JPEG>",          // label, picture, name: required.  lookup: forbidden
-  "name": "Skyr naturel",            // lookup: required.  other kinds: forbidden (the form's name goes in context.name)
+  "name": "Skyr naturel",            // lookup, images (the search words): required.  other kinds: forbidden (the form's name goes in context.name)
   "context": {                       // label, lookup, picture: optional (default {name:"", values:[]}).  name: forbidden
     "name": "AH Skyr",               // <= 120 chars, may be empty
     "values": [ { "field": "kcal", "text": "63" } ]
@@ -225,6 +225,16 @@ re-encoded object) to `AIClients.suggestion(fromLabelText|fromLookupText|fromPic
 ```
 
 (`name` is empty when the model cannot tell.)
+
+`kind` `images` (Find picture; Kagi image search, no Claude call; counts as one request against the daily cap):
+
+```json
+{ "kind": "images", "answer": { "results": [ { "id": "https://p.kagi.com/…", "title": "AH Skyr", "site": "ah.nl", "thumbnail": "https://p.kagi.com/…" } ] } }
+```
+
+At most 12 results, AI-generated pictures dropped, `thumbnail` always https on `p.kagi.com`, one per thumbnail; the app downloads
+it from there. `name` is the only thing sent to Kagi. The key is the Worker secret `KAGI_API_KEY`; a missing key, a rejected key, no
+credit or any Kagi error answers 502 `upstream`.
 
 Claude refusal (`stop_reason: "refusal"`) and cut-off answers (`max_tokens`, or 3 resumes used up) are mapped to errors, not 200:
 see section 6 (`refused`, `incomplete`).

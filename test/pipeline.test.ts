@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { handleRequest } from "../src/pipeline";
-import { LIMITS } from "../src/types";
+import { LIMITS, type Env } from "../src/types";
 import {
   attemptRows, bytesOf, claudeStub, currentFlags, freshNonce, jpegBase64, labelBody, makeDeps, nutritionAnswer,
   okReply, postRequest, resetDb, seedDevice, testEnv, textBlock,
@@ -80,6 +80,50 @@ describe("an approved device", () => {
     expect((await send(claudeStub({ status: 500 }), labelBody(), { counter: 4 })).json).toEqual({ error: "upstream", status: 500 });
     const rows = await attemptRows();
     expect(rows.map((row) => [row.outcome, row.http])).toEqual([["refused", 422], ["incomplete", 422], ["unreadable", 422], ["upstream", 502]]);
+  });
+});
+
+describe("an images request", () => {
+  const hit = (thumb: string, extra: Record<string, unknown> = {}) => ({
+    url: "https://www.example.nl/skyr", title: "Skyr", props: { thumbnail: { url: thumb }, ...extra },
+  });
+  const kagi = (reply: unknown, status = 200) => {
+    const stub = claudeStub();
+    stub.fetcher.mockImplementation(async (input: Request) => {
+      stub.requests.push(input);
+      stub.bodies.push((await input.clone().json()) as Record<string, unknown>);
+      return new Response(JSON.stringify(reply), { status, headers: { "content-type": "application/json" } });
+    });
+    return stub;
+  };
+  const withKey: Env = { ...testEnv, KAGI_API_KEY: "kagi-test" };
+  let counter = 0;
+  const run = async (stub: ReturnType<typeof kagi>, env: Env = withKey) => {
+    const response = await handleRequest(postRequest({ kind: "images", name: "AH Skyr" }, { counter: ++counter }), env, makeDeps(stub.fetcher));
+    return { status: response.status, json: (await response.json()) as Record<string, unknown> };
+  };
+
+  it("goes to Kagi with the key in the header, keeps trusted non-AI thumbnails and counts as a day use", async () => {
+    const stub = kagi({ data: { image: [
+      hit("https://p.kagi.com/a.jpg"), hit("https://p.kagi.com/a.jpg"), hit("https://p.kagi.com/b.jpg", { ai_generated: true }),
+      hit("https://evil.example/c.jpg"), hit("http://p.kagi.com/d.jpg"),
+    ] } });
+    const result = await run(stub);
+    expect(result).toEqual({ status: 200, json: { kind: "images", answer: { results: [
+      { id: "https://p.kagi.com/a.jpg", title: "Skyr", site: "example.nl", thumbnail: "https://p.kagi.com/a.jpg" },
+    ] } } });
+    expect(stub.requests[0]!.url).toBe("https://kagi.com/api/v1/search");
+    expect(stub.requests[0]!.headers.get("authorization")).toBe("Bearer kagi-test");
+    expect(stub.bodies[0]).toEqual({ query: "AH Skyr", workflow: "images", limit: 12 });
+    expect((await testEnv.DB.prepare("SELECT count FROM usage").first<{ count: number }>())?.count).toBe(1);
+    expect(await attemptRows()).toMatchObject([{ kind: "images", outcome: "ok", http: 200 }]);
+  });
+
+  it("is 502 upstream when Kagi refuses, and when the Worker has no Kagi key", async () => {
+    expect((await run(kagi({ errors: [{ code: "general.invalid_token" }] }, 400))).json).toMatchObject({ error: "upstream", status: 400 });
+    const none = kagi({ data: { image: [] } });
+    expect(await run(none, testEnv)).toEqual({ status: 502, json: { error: "upstream" } });
+    expect(none.fetcher).not.toHaveBeenCalled();
   });
 });
 

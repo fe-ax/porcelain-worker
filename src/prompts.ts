@@ -196,6 +196,8 @@ export function buildClaudeCall(req: ValidatedRequest): ClaudeCall {
   const { kind, context, options } = req;
   const image = req.image ?? new Uint8Array();
   switch (kind) {
+    case "images":
+      throw new Error("images requests go to Kagi, not Claude");
     case "label":
       return {
         system: PHOTO_SYSTEM,

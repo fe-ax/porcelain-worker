@@ -66,6 +66,7 @@ Change the GitHub repository **variable** `APP_ID_PREFIX_TEAM_BUNDLE` (for examp
 6. **Worker secrets** (once, locally, never in CI):
    ```
    npx wrangler secret put ANTHROPIC_API_KEY
+   npx wrangler secret put KAGI_API_KEY       # optional: Find picture (kind "images"); without it those requests answer 502
    npx wrangler secret put ADMIN_TOKEN      # 32+ random characters, e.g. `openssl rand -base64 36`
    ```
    `wrangler deploy` keeps them. `secret put` needs the Worker to exist: on a brand-new deployment run the first deploy below, then set the secrets.
