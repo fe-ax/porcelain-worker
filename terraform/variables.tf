@@ -4,15 +4,13 @@ variable "account_id" {
 }
 
 variable "zone_name" {
-  description = "DNS zone that hosts the Worker's hostname."
+  description = "DNS zone that hosts the Worker's hostname, e.g. example.com (TF_VAR_zone_name; the ZONE_NAME variable in CI)."
   type        = string
-  default     = "fe.ax"
 }
 
 variable "hostname" {
-  description = "Public hostname of the Worker (must be inside zone_name)."
+  description = "Public hostname of the Worker, inside zone_name, e.g. api.example.com (TF_VAR_hostname; the WORKER_HOSTNAME variable in CI)."
   type        = string
-  default     = "porcelain-api.fe.ax"
 }
 
 variable "worker_name" {
@@ -30,11 +28,11 @@ variable "database_name" {
 variable "import_d1_database_id" {
   description = "Id of an EXISTING D1 database to adopt on the first apply. Empty = nothing to adopt, a new database is created."
   type        = string
-  default     = "d2e39cbd-afcc-498a-a506-526d03949766"
+  default     = ""
 }
 
 variable "import_custom_domain_id" {
   description = "Id of an EXISTING Workers custom domain to adopt on the first apply. Empty = nothing to adopt."
   type        = string
-  default     = "d193b1f1c29952dd5c000bd4bc243fb06b7580e3"
+  default     = ""
 }
