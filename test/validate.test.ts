@@ -40,6 +40,7 @@ describe("validateRequestBody: accepted", () => {
   it("accepts picture and name requests", () => {
     expect(validate({ kind: "picture", image: jpegBase64() }).kind).toBe("picture");
     expect(validate({ kind: "name", image: jpegBase64() }).kind).toBe("name");
+    expect(validate({ kind: "images", name: "AH Skyr" })).toMatchObject({ kind: "images", name: "AH Skyr" });
   });
 
   it("clamps maxSearches instead of rejecting", () => {
@@ -64,6 +65,9 @@ describe("validateRequestBody: rejected before Claude", () => {
     ["label without image", { kind: "label" }, "kind_fields", "image"],
     ["lookup with image", { kind: "lookup", name: "x", image: jpegBase64() }, "kind_fields", "image"],
     ["lookup without name", { kind: "lookup" }, "kind_fields", "name"],
+    ["images without name", { kind: "images" }, "kind_fields", "name"],
+    ["images with image", { kind: "images", name: "a", image: jpegBase64() }, "kind_fields", "image"],
+    ["images with context", { kind: "images", name: "a", context: { name: "", values: [] } }, "kind_fields", "context"],
     ["label with name", label({ name: "skyr" }), "kind_fields", "name"],
     ["name with context", { kind: "name", image: jpegBase64(), context: { name: "", values: [] } }, "kind_fields", "context"],
     ["image not a string", { kind: "label", image: 12 }, "type", "image"],

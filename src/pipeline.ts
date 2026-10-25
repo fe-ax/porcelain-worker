@@ -1,5 +1,6 @@
 import { clientDataHash, parseAssertionHeaders, verifyAssertion } from "./assert";
 import { callClaude, parseAnswer, type Fetcher } from "./claude";
+import { searchImages } from "./kagi";
 import { buildClaudeCall } from "./prompts";
 import { validateRequestBody } from "./validate";
 import {
@@ -203,6 +204,13 @@ export async function handleRequest(
 
     const validated = validateRequestBody(body);
     kind = validated.kind;
+
+    if (validated.kind === "images") {
+      await claimDailyUse(env, device.key_id, now);
+      const results = await searchImages(env, validated.name ?? "", deps.fetcher);
+      await record(200, "ok", null);
+      return json(200, { kind: "images", answer: { results } } as RequestResponse);
+    }
 
     const call = buildClaudeCall(validated);
     await claimDailyUse(env, device.key_id, now);

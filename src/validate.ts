@@ -132,14 +132,15 @@ export function validateRequestBody(raw: Uint8Array): ValidatedRequest {
   if (!REQUEST_KINDS.includes(kindValue as RequestKind)) throw invalid("schema", "kind");
   const kind = kindValue as RequestKind;
 
-  // Kind-specific fields: label/picture/name need an image; lookup needs a name and no image;
+  // Kind-specific fields: label/picture/name need an image; lookup and images need a name and no image;
   // name is forbidden outside lookup; context is forbidden for name.
-  const needsImage = kind !== "lookup";
+  const needsName = kind === "lookup" || kind === "images";
+  const needsImage = !needsName;
   if (needsImage && body["image"] === undefined) throw invalid("kind_fields", "image");
   if (!needsImage && body["image"] !== undefined) throw invalid("kind_fields", "image");
-  if (kind === "lookup" && body["name"] === undefined) throw invalid("kind_fields", "name");
-  if (kind !== "lookup" && body["name"] !== undefined) throw invalid("kind_fields", "name");
-  if (kind === "name" && body["context"] !== undefined) throw invalid("kind_fields", "context");
+  if (needsName && body["name"] === undefined) throw invalid("kind_fields", "name");
+  if (!needsName && body["name"] !== undefined) throw invalid("kind_fields", "name");
+  if ((kind === "name" || kind === "images") && body["context"] !== undefined) throw invalid("kind_fields", "context");
 
   let image: Uint8Array | undefined;
   if (needsImage) {
@@ -153,7 +154,7 @@ export function validateRequestBody(raw: Uint8Array): ValidatedRequest {
     checkJpeg(image);
   }
 
-  const name = kind === "lookup" ? plainText(body["name"], "name", "name", 1, LIMITS.maxNameChars) : undefined;
+  const name = needsName ? plainText(body["name"], "name", "name", 1, LIMITS.maxNameChars) : undefined;
 
   const context = parseContext(body["context"]);
   const options = parseOptions(body["options"]);
