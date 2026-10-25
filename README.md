@@ -29,7 +29,7 @@ See [SECURITY.md](SECURITY.md) for reporting and the threat model.
 ## Layout
 
 ```
-src/            Worker code (TypeScript)        test/        vitest (workers pool), 241 tests
+src/            Worker code (TypeScript)        test/        vitest (workers pool), 245 tests
 migrations/     D1 schema                       docs/WIRE.md the wire contract
 terraform/      D1 + custom domain + R2 state   scripts/     bootstrap-state.sh, render-wrangler.sh
 .github/        ci.yml, deploy.yml
@@ -82,7 +82,7 @@ State locking: the S3 backend's `use_lockfile` is not enabled because R2's condi
 ## Local development
 
 ```
-nvm use                      # Node 22 (.nvmrc)
+nvm use                      # Node 24 LTS (.nvmrc)
 npm ci
 npm run typecheck && npm test
 printf 'ENV=dev\nANTHROPIC_API_KEY=sk-ant-...\nADMIN_TOKEN=%s\n' "$(openssl rand -base64 36)" > .dev.vars   # git-ignored
